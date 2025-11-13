@@ -1,6 +1,6 @@
 // Enhanced Space Invaders with 100 Levels, Purchasable Upgrades, per-level HP for invaders,
 // and points-per-kill that increase by 5 each level.
-// Controls: Left/Right or A/D, Space to shoot, 1 = Shield, 2 = Slow, P or Esc = Pause/Resume, R to restart
+// Controls: Left/Right or A/D, Space to shoot, 1 = Shield, 2 = Slow, 3 = Buy Life, P or Esc = Pause/Resume, R to restart
 
 (() => {
   const canvas = document.getElementById('game');
@@ -28,6 +28,7 @@
     game = {
       score: 0,
       lives: 3,
+      maxLives: 3, // maximum lives you can have (can't exceed)
       state: 'playing', // 'playing' | 'won' | 'over'
       paused: false, // pause flag
       player: new Player(W / 2, H - 60),
@@ -63,13 +64,15 @@
       lastInvaderStep: 0,
 
       // Upgrades (will be recalculated by applyLevelScaling)
+      upgradePrice: 100, // shield/slow base per-level price (100 * level)
+      lifeUpgradePrice: 200, // life upgrade base per-level price (200 * level)
+
       shieldActive: false,
       shieldExpires: 0,
       slowActive: false,
       slowExpires: 0,
       shieldDurationMs: 15000,
       slowDurationMs: 15000,
-      upgradePrice: 100,
       slowMultiplier: 1.8, // movement interval multiplied by this when slowed (slower)
       slowShootFactor: 0.5, // shooting probability multiplier when slowed
 
@@ -110,6 +113,9 @@
 
     // Upgrade price increases by 100 each level (level 1 => 100, level 2 => 200, ...)
     game.upgradePrice = Math.max(0, Math.floor(100 * lvl));
+
+    // Life upgrade price increases by 200 each level (level 1 => 200, level 2 => 400, ...)
+    game.lifeUpgradePrice = Math.max(0, Math.floor(200 * lvl));
 
     // Points-per-kill scaling: baseKill + (level - 1) * incrementPerLevel
     const baseKill = 10;
@@ -196,11 +202,18 @@
     scoreEl.textContent = `Score: ${Math.max(0, Math.floor(game.score))}`;
     livesEl.textContent = `Lives: ${game.lives}`;
     levelEl.textContent = `Level: ${game.level} / ${game.maxLevel}`;
+
     // update upgrade availability text
-    const canBuy = game.score >= game.upgradePrice && !game.paused && game.state === 'playing';
-    upgradesEl.innerHTML = `Upgrades: [1] Shield (${game.upgradePrice}) — lasts ${game.shieldDurationMs/1000}s (${game.shieldActive ? 'ACTIVE' : 'ready'}) | ` +
-                           `[2] Slow (${game.upgradePrice}) — lasts ${game.slowDurationMs/1000}s (${game.slowActive ? 'ACTIVE' : 'ready'})` +
-                           ` ${canBuy ? '' : `<span style="opacity:0.6"> — Need ${game.upgradePrice} score to buy</span>`}`;
+    const canBuyShieldOrSlow = game.score >= game.upgradePrice && !game.paused && game.state === 'playing';
+    const canBuyLife = game.score >= game.lifeUpgradePrice && !game.paused && game.state === 'playing' && game.lives < game.maxLives;
+
+    upgradesEl.innerHTML =
+      `Upgrades: [1] Shield (${game.upgradePrice}) — lasts ${game.shieldDurationMs/1000}s (${game.shieldActive ? 'ACTIVE' : 'ready'}) | ` +
+      `[2] Slow (${game.upgradePrice}) — lasts ${game.slowDurationMs/1000}s (${game.slowActive ? 'ACTIVE' : 'ready'}) | ` +
+      `[3] Buy Life (${game.lifeUpgradePrice}) — add 1 life (max ${game.maxLives})` +
+      `<br>` +
+      `${canBuyShieldOrSlow ? '' : `<span style="opacity:0.6"> — Need ${game.upgradePrice} score to buy Shield/Slow</span>`}` +
+      `${canBuyLife ? '' : (game.lives >= game.maxLives ? `<span style="opacity:0.6"> — At max lives</span>` : `<span style="opacity:0.6"> — Need ${game.lifeUpgradePrice} score to buy Life</span>` )}`;
   }
 
   function playerShoot() {
@@ -258,6 +271,28 @@
     game.slowExpires = now + game.slowDurationMs;
     game._slowRemaining = null;
     updateHUD();
+  }
+
+  // Purchase extra life (adds 1 life up to maxLives). Price is per-level (200 * level).
+  function buyLife() {
+    if (game.state !== 'playing' || game.paused) return;
+    if (game.lives >= game.maxLives) {
+      // already at max
+      stateEl.textContent = `Already at max lives (${game.maxLives})`;
+      setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 1200);
+      return;
+    }
+    if (game.score < game.lifeUpgradePrice) {
+      // not enough score
+      return;
+    }
+    // subtract and add 1 life (capped)
+    game.score -= game.lifeUpgradePrice;
+    game.lives = Math.min(game.maxLives, game.lives + 1);
+    updateHUD();
+    // small feedback
+    stateEl.textContent = `Bought 1 life (-${game.lifeUpgradePrice})`;
+    setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
   }
 
   // Pause/Resume toggle
@@ -350,7 +385,7 @@
         } else {
           // advance level
           game.level++;
-          // recalc per-level parameters (including hpPerInvader, killScore, upgradePrice) then create invaders
+          // recalc per-level parameters (including hpPerInvader, killScore, upgradePrice, lifeUpgradePrice) then create invaders
           applyLevelScaling(game.level);
           createInvaders();
           // clear bullets
@@ -542,12 +577,13 @@
 
     // HUD minimal overlays
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(6, 6, 420, 72);
+    ctx.fillRect(6, 6, 500, 72);
     ctx.fillStyle = '#9fb6c7';
     ctx.font = '14px system-ui, Arial';
     ctx.fillText(`Score: ${Math.max(0, Math.floor(game.score))}`, 16, 26);
     ctx.fillText(`Lives: ${game.lives}`, 160, 26);
     ctx.fillText(`Level: ${game.level} / ${game.maxLevel}`, 300, 26);
+    ctx.fillText(`Life Cost: ${game.lifeUpgradePrice}`, 420, 26);
     ctx.fillText(`Enemy HP: ${game.hpPerInvader}`, 16, 48);
     ctx.fillText(`Kill Points: ${game.killScore}`, 200, 48);
     ctx.fillText(`Upgrade Cost: ${game.upgradePrice}`, 340, 48);
@@ -659,6 +695,24 @@
         buySlow();
       } else {
         stateEl.textContent = `Not enough score for Slow (need ${game.upgradePrice})`;
+        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
+      }
+    }
+    if (e.code === 'Digit3') {
+      if (game.paused) {
+        stateEl.textContent = 'Game is paused';
+        setTimeout(() => { if (game.state === 'playing' && game.paused) stateEl.textContent = 'Paused — Press P or Esc to resume'; }, 900);
+        return;
+      }
+      if (game.lives >= game.maxLives) {
+        stateEl.textContent = `Already at max lives (${game.maxLives})`;
+        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
+        return;
+      }
+      if (game.score >= game.lifeUpgradePrice) {
+        buyLife();
+      } else {
+        stateEl.textContent = `Not enough score for Life (need ${game.lifeUpgradePrice})`;
         setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
       }
     }
