@@ -28,7 +28,7 @@
     game = {
       score: 0,
       lives: 3,
-      maxLives: 3, // maximum lives you can have (can't exceed)
+      maxLives: 3, // maximum lives
       state: 'playing', // 'playing' | 'won' | 'over'
       paused: false, // pause flag
       player: new Player(W / 2, H - 60),
@@ -64,8 +64,8 @@
       lastInvaderStep: 0,
 
       // Upgrades (will be recalculated by applyLevelScaling)
-      upgradePrice: 100, // shield/slow base per-level price (100 * level)
-      lifeUpgradePrice: 200, // life upgrade base per-level price (200 * level)
+      upgradePrice: 100, // shield/slow base price per level (100 * level)
+      lifeUpgradePrice: 200, // life base price per level (200 * level)
 
       shieldActive: false,
       shieldExpires: 0,
@@ -93,7 +93,6 @@
   }
 
   function applyLevelScaling(level) {
-    // Calculate per-level parameters (invader movement interval, bullet speed, shoot probability, move step)
     const lvl = Math.max(1, level);
     // invaderStepInterval decreases per level, bounded
     const interval = Math.max(120, game.baseInvaderStepInterval * Math.pow(0.96, lvl - 1));
@@ -111,13 +110,13 @@
     // HP scaling for invaders: increases linearly, +1 per level
     game.hpPerInvader = Math.max(1, lvl);
 
-    // Upgrade price increases by 100 each level (level 1 => 100, level 2 => 200, ...)
+    // Shield/Slow upgrade price increases by 100 each level (level 1 => 100, level 2 => 200, ...)
     game.upgradePrice = Math.max(0, Math.floor(100 * lvl));
 
     // Life upgrade price increases by 200 each level (level 1 => 200, level 2 => 400, ...)
     game.lifeUpgradePrice = Math.max(0, Math.floor(200 * lvl));
 
-    // Points-per-kill scaling: baseKill + (level - 1) * incrementPerLevel
+    // Points-per-kill scaling
     const baseKill = 10;
     const incrementPerLevel = 5;
     game.killScore = baseKill + (lvl - 1) * incrementPerLevel;
@@ -163,9 +162,7 @@
     const startX = (W - (cols - 1) * spacingX) / 2;
     const startY = marginY;
 
-    // Use the hpPerInvader computed in applyLevelScaling to ensure consistency
     const hpPerInvader = Math.max(1, Math.floor(game.hpPerInvader));
-
     game.invaders = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -187,7 +184,6 @@
   }
 
   function circleRectCollide(c, r) {
-    // c: {x,y,r}, r: {x,y,w,h}
     const cx = c.x;
     const cy = c.y;
     const rx = r.x, ry = r.y, rw = r.w, rh = r.h;
@@ -203,7 +199,6 @@
     livesEl.textContent = `Lives: ${game.lives}`;
     levelEl.textContent = `Level: ${game.level} / ${game.maxLevel}`;
 
-    // update upgrade availability text
     const canBuyShieldOrSlow = game.score >= game.upgradePrice && !game.paused && game.state === 'playing';
     const canBuyLife = game.score >= game.lifeUpgradePrice && !game.paused && game.state === 'playing' && game.lives < game.maxLives;
 
@@ -228,7 +223,6 @@
   function invaderShoot() {
     if (game.paused) return;
     if (game.invaderBullets.length > 4) return; // limit simultaneous invader bullets
-    // pick a random alive invader from the bottom-most in a column
     const columns = {};
     game.invaders.forEach(inv => {
       if (!inv.alive) return;
@@ -237,7 +231,6 @@
     const arr = Object.values(columns);
     if (!arr.length) return;
     const shooter = arr[Math.floor(Math.random() * arr.length)];
-    // fire using per-level bullet speed
     const vy = game.invaderBulletSpeed * (1 + (game.level - 1) * 0.003);
     game.invaderBullets.push(Bullet(shooter.x + shooter.w / 2, shooter.y + shooter.h + 8, vy, 'invader'));
   }
@@ -246,16 +239,17 @@
   function buyShield() {
     if (game.state !== 'playing' || game.paused) return;
     if (game.score < game.upgradePrice) {
-      // not enough score
+      stateEl.textContent = `Not enough score for Shield (need ${game.upgradePrice})`;
+      setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
       return;
     }
-    // subtract immediately
     game.score -= game.upgradePrice;
-    // activate shield
     const now = performance.now();
     game.shieldActive = true;
     game.shieldExpires = now + game.shieldDurationMs;
     game._shieldRemaining = null;
+    stateEl.textContent = `Bought Shield (-${game.upgradePrice})`;
+    setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
     updateHUD();
   }
 
@@ -263,6 +257,8 @@
   function buySlow() {
     if (game.state !== 'playing' || game.paused) return;
     if (game.score < game.upgradePrice) {
+      stateEl.textContent = `Not enough score for Slow (need ${game.upgradePrice})`;
+      setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
       return;
     }
     game.score -= game.upgradePrice;
@@ -270,6 +266,8 @@
     game.slowActive = true;
     game.slowExpires = now + game.slowDurationMs;
     game._slowRemaining = null;
+    stateEl.textContent = `Bought Slow (-${game.upgradePrice})`;
+    setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
     updateHUD();
   }
 
@@ -277,22 +275,23 @@
   function buyLife() {
     if (game.state !== 'playing' || game.paused) return;
     if (game.lives >= game.maxLives) {
-      // already at max
       stateEl.textContent = `Already at max lives (${game.maxLives})`;
       setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 1200);
       return;
     }
     if (game.score < game.lifeUpgradePrice) {
-      // not enough score
+      stateEl.textContent = `Not enough score for Life (need ${game.lifeUpgradePrice})`;
+      setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
       return;
     }
+
     // subtract and add 1 life (capped)
     game.score -= game.lifeUpgradePrice;
     game.lives = Math.min(game.maxLives, game.lives + 1);
-    updateHUD();
-    // small feedback
+
     stateEl.textContent = `Bought 1 life (-${game.lifeUpgradePrice})`;
     setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
+    updateHUD();
   }
 
   // Pause/Resume toggle
@@ -385,7 +384,7 @@
         } else {
           // advance level
           game.level++;
-          // recalc per-level parameters (including hpPerInvader, killScore, upgradePrice, lifeUpgradePrice) then create invaders
+          // recalc per-level parameters (including hpPerInvader, killScore, upgrade prices) then create invaders
           applyLevelScaling(game.level);
           createInvaders();
           // clear bullets
@@ -442,8 +441,6 @@
             inv.alive = false;
             // award points on kill using per-level killScore
             game.score += game.killScore;
-          } else {
-            // optional: small sound or score for hit can be added here
           }
           updateHUD();
           break;
@@ -465,7 +462,6 @@
         // if shield active, consume bullet but do not damage player
         if (game.shieldActive) {
           game.invaderBullets.splice(i, 1);
-          // optionally create a little effect here
         } else {
           game.invaderBullets.splice(i, 1);
           game.lives -= 1;
@@ -523,19 +519,16 @@
     for (let inv of game.invaders) {
       if (!inv.alive) continue;
       ctx.fillStyle = inv.color;
-      // draw simple alien shape
       ctx.save();
       ctx.translate(inv.x, inv.y);
       ctx.fillRect(0, 8, inv.w, 8);
       ctx.fillRect(6, 0, inv.w - 12, 8);
       ctx.fillRect(0, 16, 8, 8);
       ctx.fillRect(inv.w - 8, 16, 8, 8);
-      // eyes
       ctx.fillStyle = '#061127';
       ctx.fillRect(10, 6, 6, 4);
       ctx.fillRect(inv.w - 18, 6, 6, 4);
 
-      // draw HP bar above invader when > 1 HP
       if (typeof inv.maxHp === 'number' && inv.maxHp > 1) {
         const barW = inv.w;
         const barH = 6;
@@ -544,7 +537,6 @@
         ctx.fillRect(0, -barH - 6, barW, barH);
         ctx.fillStyle = '#e25f5f';
         ctx.fillRect(1, -barH - 5, Math.max(2, (barW - 2) * ratio), barH - 2);
-        // small hp number
         ctx.fillStyle = '#fff';
         ctx.font = '10px system-ui, Arial';
         ctx.fillText((typeof inv.hp === 'number' ? inv.hp : inv.maxHp).toString(), barW - 12, -barH - 0);
@@ -577,7 +569,7 @@
 
     // HUD minimal overlays
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(6, 6, 500, 72);
+    ctx.fillRect(6, 6, 520, 72);
     ctx.fillStyle = '#9fb6c7';
     ctx.font = '14px system-ui, Arial';
     ctx.fillText(`Score: ${Math.max(0, Math.floor(game.score))}`, 16, 26);
@@ -678,12 +670,7 @@
         setTimeout(() => { if (game.state === 'playing' && game.paused) stateEl.textContent = 'Paused — Press P or Esc to resume'; }, 900);
         return;
       }
-      if (game.score >= game.upgradePrice) {
-        buyShield();
-      } else {
-        stateEl.textContent = `Not enough score for Shield (need ${game.upgradePrice})`;
-        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
-      }
+      buyShield();
     }
     if (e.code === 'Digit2') {
       if (game.paused) {
@@ -691,12 +678,7 @@
         setTimeout(() => { if (game.state === 'playing' && game.paused) stateEl.textContent = 'Paused — Press P or Esc to resume'; }, 900);
         return;
       }
-      if (game.score >= game.upgradePrice) {
-        buySlow();
-      } else {
-        stateEl.textContent = `Not enough score for Slow (need ${game.upgradePrice})`;
-        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
-      }
+      buySlow();
     }
     if (e.code === 'Digit3') {
       if (game.paused) {
@@ -704,17 +686,7 @@
         setTimeout(() => { if (game.state === 'playing' && game.paused) stateEl.textContent = 'Paused — Press P or Esc to resume'; }, 900);
         return;
       }
-      if (game.lives >= game.maxLives) {
-        stateEl.textContent = `Already at max lives (${game.maxLives})`;
-        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
-        return;
-      }
-      if (game.score >= game.lifeUpgradePrice) {
-        buyLife();
-      } else {
-        stateEl.textContent = `Not enough score for Life (need ${game.lifeUpgradePrice})`;
-        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
-      }
+      buyLife();
     }
   });
 
@@ -724,7 +696,6 @@
   requestAnimationFrame(loop);
 
   // ensure HUD updates when score changes via other means (like immediate subtraction)
-  // The game updates HUD inside relevant functions; to be safe, periodically refresh small UI pieces
   setInterval(() => {
     if (game) updateHUD();
   }, 300);
