@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Space Invaders — Levels & Upgrades</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Space Invaders</h1>
+    <canvas id="game" width="800" height="600"></canvas>
+    <div class="info">
+      <div id="score">Score: 0</div>
+      <div id="lives">Lives: 3</div>
+      <div id="level">Level: 1 / 100</div>
+      <div id="state" class="state"></div>
+      <div id="upgrades" class="upgrades">
+        Upgrades: [1] Shield (100) — lasts 15s | [2] Slow (100) — lasts 15s
+      </div>
+      <div class="controls">Controls: ← → or A/D to move, SPACE to shoot, 1 = Shield, 2 = Slow, R to restart</div>
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
