@@ -61,7 +61,7 @@
       // stepping
       lastInvaderStep: 0,
 
-      // Upgrades
+      // Upgrades (will be recalculated by applyLevelScaling)
       shieldActive: false,
       shieldExpires: 0,
       slowActive: false,
@@ -101,7 +101,10 @@
     game.invaderShootProbability = Math.min(0.9, game.invaderShootProbabilityBase + (lvl - 1) * 0.01);
 
     // HP scaling for invaders: now increases linearly, 1 per level
-    game.hpPerInvader = Math.max(1, level);
+    game.hpPerInvader = Math.max(1, lvl);
+
+    // Upgrade price increases by 100 each level (level 1 => 100, level 2 => 200, ...)
+    game.upgradePrice = Math.max(0, Math.floor(100 * lvl));
 
     // Points-per-kill scaling: baseKill + (level - 1) * incrementPerLevel
     const baseKill = 10;
@@ -192,7 +195,7 @@
     const canBuy = game.score >= game.upgradePrice;
     upgradesEl.innerHTML = `Upgrades: [1] Shield (${game.upgradePrice}) — lasts ${game.shieldDurationMs/1000}s (${game.shieldActive ? 'ACTIVE' : 'ready'}) | ` +
                            `[2] Slow (${game.upgradePrice}) — lasts ${game.slowDurationMs/1000}s (${game.slowActive ? 'ACTIVE' : 'ready'})` +
-                           ` ${canBuy ? '' : '<span style="opacity:0.6"> — Need 100 score to buy</span>'}`;
+                           ` ${canBuy ? '' : `<span style="opacity:0.6"> — Need ${game.upgradePrice} score to buy</span>`}`;
   }
 
   function playerShoot() {
@@ -298,7 +301,7 @@
         } else {
           // advance level
           game.level++;
-          // recalc per-level parameters (including hpPerInvader and killScore) then create invaders
+          // recalc per-level parameters (including hpPerInvader, killScore, upgradePrice) then create invaders
           applyLevelScaling(game.level);
           createInvaders();
           // clear bullets
@@ -568,7 +571,7 @@
         buyShield();
       } else {
         // can show quick feedback in state area
-        stateEl.textContent = 'Not enough score for Shield';
+        stateEl.textContent = `Not enough score for Shield (need ${game.upgradePrice})`;
         setTimeout(() => { if (game.state === 'playing') stateEl.textContent = ''; }, 900);
       }
     }
@@ -576,7 +579,7 @@
       if (game.score >= game.upgradePrice) {
         buySlow();
       } else {
-        stateEl.textContent = 'Not enough score for Slow';
+        stateEl.textContent = `Not enough score for Slow (need ${game.upgradePrice})`;
         setTimeout(() => { if (game.state === 'playing') stateEl.textContent = ''; }, 900);
       }
     }
