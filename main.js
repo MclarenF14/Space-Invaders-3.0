@@ -1,6 +1,6 @@
 // Enhanced Space Invaders with 100 Levels, Purchasable Upgrades, per-level HP for invaders,
 // and points-per-kill that increase by 5 each level.
-// Controls: Left/Right or A/D, Space to shoot, 1 = Shield, 2 = Slow, R to restart
+// Controls: Left/Right or A/D, Space to shoot, 1 = Shield, 2 = Slow, P or Esc = Pause/Resume, R to restart
 
 (() => {
   const canvas = document.getElementById('game');
@@ -29,6 +29,7 @@
       score: 0,
       lives: 3,
       state: 'playing', // 'playing' | 'won' | 'over'
+      paused: false, // pause flag
       player: new Player(W / 2, H - 60),
       bullets: [],
       invaderBullets: [],
@@ -72,6 +73,10 @@
       slowMultiplier: 1.8, // movement interval multiplied by this when slowed (slower)
       slowShootFactor: 0.5, // shooting probability multiplier when slowed
 
+      // pause helpers (store remaining times while paused)
+      _shieldRemaining: null,
+      _slowRemaining: null,
+
       // visual hit flash
       hitFlash: [], // {x,y,ttl}
 
@@ -100,7 +105,7 @@
     // shooting probability increases slightly per level, capped
     game.invaderShootProbability = Math.min(0.9, game.invaderShootProbabilityBase + (lvl - 1) * 0.01);
 
-    // HP scaling for invaders: now increases linearly, 1 per level
+    // HP scaling for invaders: increases linearly, +1 per level
     game.hpPerInvader = Math.max(1, lvl);
 
     // Upgrade price increases by 100 each level (level 1 => 100, level 2 => 200, ...)
@@ -192,13 +197,14 @@
     livesEl.textContent = `Lives: ${game.lives}`;
     levelEl.textContent = `Level: ${game.level} / ${game.maxLevel}`;
     // update upgrade availability text
-    const canBuy = game.score >= game.upgradePrice;
+    const canBuy = game.score >= game.upgradePrice && !game.paused && game.state === 'playing';
     upgradesEl.innerHTML = `Upgrades: [1] Shield (${game.upgradePrice}) — lasts ${game.shieldDurationMs/1000}s (${game.shieldActive ? 'ACTIVE' : 'ready'}) | ` +
                            `[2] Slow (${game.upgradePrice}) — lasts ${game.slowDurationMs/1000}s (${game.slowActive ? 'ACTIVE' : 'ready'})` +
                            ` ${canBuy ? '' : `<span style="opacity:0.6"> — Need ${game.upgradePrice} score to buy</span>`}`;
   }
 
   function playerShoot() {
+    if (game.paused || game.state !== 'playing') return;
     const now = performance.now();
     if (now - game.lastShotAt < game.shootCooldown) return;
     game.lastShotAt = now;
@@ -207,6 +213,7 @@
   }
 
   function invaderShoot() {
+    if (game.paused) return;
     if (game.invaderBullets.length > 4) return; // limit simultaneous invader bullets
     // pick a random alive invader from the bottom-most in a column
     const columns = {};
@@ -224,7 +231,7 @@
 
   // Purchase shield
   function buyShield() {
-    if (game.state !== 'playing') return;
+    if (game.state !== 'playing' || game.paused) return;
     if (game.score < game.upgradePrice) {
       // not enough score
       return;
@@ -235,12 +242,13 @@
     const now = performance.now();
     game.shieldActive = true;
     game.shieldExpires = now + game.shieldDurationMs;
+    game._shieldRemaining = null;
     updateHUD();
   }
 
   // Purchase slow
   function buySlow() {
-    if (game.state !== 'playing') return;
+    if (game.state !== 'playing' || game.paused) return;
     if (game.score < game.upgradePrice) {
       return;
     }
@@ -248,21 +256,62 @@
     const now = performance.now();
     game.slowActive = true;
     game.slowExpires = now + game.slowDurationMs;
+    game._slowRemaining = null;
+    updateHUD();
+  }
+
+  // Pause/Resume toggle
+  function togglePause() {
+    if (game.state !== 'playing') return;
+    const now = performance.now();
+    if (!game.paused) {
+      // going to paused: store remaining times and freeze timers
+      if (game.shieldActive) {
+        game._shieldRemaining = Math.max(0, game.shieldExpires - now);
+      }
+      if (game.slowActive) {
+        game._slowRemaining = Math.max(0, game.slowExpires - now);
+      }
+      game.paused = true;
+      // reset some timestamps so nothing triggers immediately when unpausing
+      game.lastTimestamp = now;
+      game.lastInvaderStep = now;
+      game.lastShotAt = now;
+      stateEl.textContent = 'Paused — Press P or Esc to resume';
+    } else {
+      // unpausing: restore durations
+      if (game._shieldRemaining != null && game.shieldActive) {
+        game.shieldExpires = now + game._shieldRemaining;
+        game._shieldRemaining = null;
+      }
+      if (game._slowRemaining != null && game.slowActive) {
+        game.slowExpires = now + game._slowRemaining;
+        game._slowRemaining = null;
+      }
+      game.paused = false;
+      stateEl.textContent = '';
+      // ensure we don't process a huge dt on next update
+      game.lastTimestamp = now;
+      game.lastInvaderStep = now;
+      game.lastShotAt = now;
+    }
     updateHUD();
   }
 
   // Update loop
   function update(dt) {
-    if (game.state !== 'playing') return;
+    if (game.state !== 'playing' || game.paused) return;
 
     const now = performance.now();
 
     // update upgrade expirations
     if (game.shieldActive && now >= game.shieldExpires) {
       game.shieldActive = false;
+      game._shieldRemaining = null;
     }
     if (game.slowActive && now >= game.slowExpires) {
       game.slowActive = false;
+      game._slowRemaining = null;
     }
 
     const p = game.player;
@@ -493,14 +542,15 @@
 
     // HUD minimal overlays
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(6, 6, 360, 72);
+    ctx.fillRect(6, 6, 420, 72);
     ctx.fillStyle = '#9fb6c7';
     ctx.font = '14px system-ui, Arial';
     ctx.fillText(`Score: ${Math.max(0, Math.floor(game.score))}`, 16, 26);
     ctx.fillText(`Lives: ${game.lives}`, 160, 26);
-    ctx.fillText(`Level: ${game.level} / ${game.maxLevel}`, 260, 26);
+    ctx.fillText(`Level: ${game.level} / ${game.maxLevel}`, 300, 26);
     ctx.fillText(`Enemy HP: ${game.hpPerInvader}`, 16, 48);
-    ctx.fillText(`Kill Points: ${game.killScore}`, 160, 48);
+    ctx.fillText(`Kill Points: ${game.killScore}`, 200, 48);
+    ctx.fillText(`Upgrade Cost: ${game.upgradePrice}`, 340, 48);
 
     // active upgrade timers
     const now = performance.now();
@@ -510,13 +560,26 @@
       let y = 52;
       if (game.shieldActive) {
         const t = Math.max(0, Math.ceil((game.shieldExpires - now) / 1000));
-        ctx.fillText(`Shield: ${t}s`, 300, y);
+        ctx.fillText(`Shield: ${t}s`, 16, y + 18);
         y += 16;
       }
       if (game.slowActive) {
         const t = Math.max(0, Math.ceil((game.slowExpires - now) / 1000));
-        ctx.fillText(`Slow: ${t}s`, 300, y);
+        ctx.fillText(`Slow: ${t}s`, 120, y + 18);
       }
+    }
+
+    // Pause overlay
+    if (game.paused) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#7afcff';
+      ctx.font = '36px system-ui, Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('PAUSED', W / 2, H / 2 - 8);
+      ctx.font = '18px system-ui, Arial';
+      ctx.fillText('Press P or Esc to resume', W / 2, H / 2 + 28);
+      ctx.textAlign = 'start';
     }
 
     if (game.state === 'over' || game.state === 'won') {
@@ -562,25 +625,41 @@
 
   // restart handler & purchase keys handler
   addEventListener('keydown', e => {
+    // Restart
     if (e.code === 'KeyR') {
       resetGame();
     }
+
+    // Pause / Resume
+    if (e.code === 'KeyP' || e.code === 'Escape') {
+      togglePause();
+    }
+
     // Only purchase on keydown to avoid multiple buys from held key
     if (e.code === 'Digit1') {
+      if (game.paused) {
+        stateEl.textContent = 'Game is paused';
+        setTimeout(() => { if (game.state === 'playing' && game.paused) stateEl.textContent = 'Paused — Press P or Esc to resume'; }, 900);
+        return;
+      }
       if (game.score >= game.upgradePrice) {
         buyShield();
       } else {
-        // can show quick feedback in state area
         stateEl.textContent = `Not enough score for Shield (need ${game.upgradePrice})`;
-        setTimeout(() => { if (game.state === 'playing') stateEl.textContent = ''; }, 900);
+        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
       }
     }
     if (e.code === 'Digit2') {
+      if (game.paused) {
+        stateEl.textContent = 'Game is paused';
+        setTimeout(() => { if (game.state === 'playing' && game.paused) stateEl.textContent = 'Paused — Press P or Esc to resume'; }, 900);
+        return;
+      }
       if (game.score >= game.upgradePrice) {
         buySlow();
       } else {
         stateEl.textContent = `Not enough score for Slow (need ${game.upgradePrice})`;
-        setTimeout(() => { if (game.state === 'playing') stateEl.textContent = ''; }, 900);
+        setTimeout(() => { if (game.state === 'playing' && !game.paused) stateEl.textContent = ''; }, 900);
       }
     }
   });
