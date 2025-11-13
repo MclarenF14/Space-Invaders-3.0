@@ -100,13 +100,8 @@
     // shooting probability increases slightly per level, capped
     game.invaderShootProbability = Math.min(0.9, game.invaderShootProbabilityBase + (lvl - 1) * 0.01);
 
-    // HP scaling for invaders:
-    // Configurable: change hpGrowthDivisor to change how fast HP ramps up.
-    // Current formula: hp = 1 + floor((level - 1) / hpGrowthDivisor)
-    // Example: hpGrowthDivisor = 3 => +1 HP every 3 levels.
-    const hpGrowthDivisor = 3;
-    game.hpPerInvader = 1 + Math.floor((lvl - 1) / hpGrowthDivisor);
-    if (game.hpPerInvader < 1) game.hpPerInvader = 1;
+    // HP scaling for invaders: now increases linearly, 1 per level
+    game.hpPerInvader = Math.max(1, level);
 
     // Points-per-kill scaling: baseKill + (level - 1) * incrementPerLevel
     const baseKill = 10;
